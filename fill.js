@@ -163,7 +163,8 @@
     el.dispatchEvent(new Event("blur", { bubbles: true }));
   }
 
-  const PLACEHOLDER = /^(select an option|select|choose.*|please select.*|--.*|)$/;
+  const PLACEHOLDER = /^(select an option|select one|select|choose.*|please select.*|--.*|)$/;
+  const alnum = (s) => s.replace(/[^a-z0-9]/g, "");
 
   function pick(options, answer) {
     const a = norm(answer);
@@ -174,12 +175,27 @@
       c.find((o) => o.text.startsWith(a)) ||
       c.find((o) => o.text.includes(a)) ||
       c.find((o) => o.text.length >= 3 && a.includes(o.text)) ||
+      // "Bachelors" vs "Bachelor's Degree"
+      c.find((o) => alnum(o.text).length >= 3 && alnum(a).includes(alnum(o.text))) ||
       null
     );
   }
 
+  // A question's container: radio/checkbox groups, or a Workday form field.
+  const GROUP = "fieldset, [role=radiogroup], [role=group], [data-automation-id^=formField]";
+
+  // The group's own question text: legend, aria label, or a label not tied to one of its options.
+  function groupQuestion(group, members) {
+    const legend = group.querySelector("legend");
+    if (legend) return textOf(legend);
+    if (group.getAttribute("aria-labelledby")) return byIds(group, group.getAttribute("aria-labelledby"));
+    if (group.getAttribute("aria-label")) return group.getAttribute("aria-label");
+    const own = [...group.querySelectorAll("label")].find((l) => !members.some((m) => [...(m.labels || [])].includes(l)));
+    return own ? textOf(own) : "";
+  }
+
   function mark(el, ok) {
-    const target = el.type === "radio" ? el.closest("fieldset, [role=radiogroup]") || el : el;
+    const target = /^(radio|checkbox)$/.test(el.type) ? el.closest(GROUP) || el : el;
     target.style.outline = ok ? "2px solid #2e7d32" : "2px dashed #e65100";
     target.style.outlineOffset = "2px";
   }
@@ -242,7 +258,12 @@
       (visible(e) || (e.labels && e.labels[0] && visible(e.labels[0])))
   );
 
-  if (!fields.length) return { fields: 0, filled: 0, needs: [] };
+  // Workday-style dropdowns: a button showing "Select One" that opens a listbox.
+  const dropdowns = deepQuery(dialogs.length ? dialogs[dialogs.length - 1] : document, 'button[aria-haspopup="listbox"]').filter(
+    (b) => visible(b) && !b.disabled && PLACEHOLDER.test(norm(textOf(b)))
+  );
+
+  if (!fields.length && !dropdowns.length) return { fields: 0, filled: 0, needs: [] };
 
   // ---------- fill ----------
   let filled = 0;
@@ -272,7 +293,27 @@
     const q = questionFor(el);
 
     if (el.type === "checkbox") {
-      // Only tick boxes the user explicitly answered "yes" to via custom answers.
+      // A group of checkboxes answering one question (e.g. "highest education level"):
+      // tick the one matching the answer.
+      const box = el.closest(GROUP);
+      const group = box ? fields.filter((c) => c.type === "checkbox" && c.closest(GROUP) === box) : [];
+      if (group.length > 1) {
+        if (doneGroups.has(box)) continue;
+        doneGroups.add(box);
+        if (group.some((c) => c.checked)) continue;
+        const gq = norm(groupQuestion(box, group));
+        const opt = pick(group.map((c) => ({ el: c, text: norm(labelOf(c) || c.value) })), answerFor(gq));
+        if (opt) {
+          opt.el.click();
+          mark(el, true);
+          filled++;
+        } else {
+          mark(el, false);
+          needs.add(gq);
+        }
+        continue;
+      }
+      // A lone checkbox: only tick it if the user answered "yes" to it via custom answers.
       const a = norm(answerFor(q));
       if (!el.checked && /^(yes|true|check|checked)$/.test(a)) {
         el.click();
@@ -322,5 +363,41 @@
     }
   }
 
-  return { fields: fields.length, filled, needs: [...needs] };
+  for (const b of dropdowns) {
+    const box = b.closest(GROUP);
+    const q = norm(
+      labelOf(b).replace(/\b(select one|required)\b/gi, "") ||
+        (box ? groupQuestion(box, [b]) : "")
+    );
+    const a = answerFor(q);
+    if (!a) {
+      mark(b, false);
+      needs.add(q);
+      continue;
+    }
+    press(b);
+    let opt = null;
+    for (let i = 0; i < 30 && !opt; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      const listId = b.getAttribute("aria-controls") || b.getAttribute("aria-owns");
+      const list = listId ? document.getElementById(listId) : null;
+      const opts = (list ? [...list.querySelectorAll("[role=option]")] : deepQuery(document, "[role=listbox] [role=option]")).filter(visible);
+      if (opts.length) {
+        opt = pick(opts.map((o) => ({ el: o, text: norm(textOf(o)) })), a);
+        if (!opt) break;
+      }
+    }
+    if (opt) {
+      press(opt.el);
+      mark(b, true);
+      filled++;
+    } else {
+      key(document.activeElement || b, "keydown", "Escape");
+      mark(b, false);
+      needs.add(q);
+    }
+    await new Promise((r) => setTimeout(r, 200)); // let the list close before the next one
+  }
+
+  return { fields: fields.length + dropdowns.length, filled, needs: [...needs] };
 })();
