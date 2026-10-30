@@ -93,7 +93,7 @@
     [/disabilit/, () => d.disability],
     [/first name|given name/, () => d.firstName],
     [/last name|surname|family name/, () => d.lastName],
-    [/full name|^name\b|your name|legal name/, () => fullName],
+    [/full name|^name\b(?!\s+of)|your name|legal name/, () => fullName], // not "Name of current employer"
     [/e-?mail/, () => d.email],
     [/country code|phone country|dialing code/, () => d.phoneCountry],
     [/phone|mobile|\bcell\b/, () => d.phone],
@@ -106,7 +106,7 @@
     [/\bstate\b|province/, () => d.state],
     [/\bzip\b|postal/, () => d.zip],
     [/\bcountry\b/, () => d.country],
-    [/current (job )?title|job title|headline/, () => d.currentTitle],
+    [/(current|recent|most recent) (job )?title|job title|headline/, () => d.currentTitle],
     [/current (company|employer)|company name/, () => d.currentCompany],
     [/cover letter|summary|why (are you|do you)/, () => d.coverLetter],
   ];
@@ -142,22 +142,51 @@
     return el.getAttribute("aria-label") || "";
   }
 
-  function questionFor(el) {
+  const CONTROLS = 'input:not([type=hidden]), select, textarea, button[aria-haspopup="listbox"]';
+
+  // For fields with no label (e.g. Gem forms): the text of the largest ancestor that holds
+  // only these controls, minus the options' own labels ("Yes", "No").
+  function surroundingText(members) {
+    let n = members[0];
+    let text = "";
+    for (let i = 0; i < 6 && n.parentElement; i++) {
+      n = n.parentElement;
+      if ([...n.querySelectorAll(CONTROLS)].some((c) => !members.includes(c))) break;
+      text = textOf(n);
+    }
+    for (const m of members) {
+      const l = m.labels && m.labels.length ? textOf(m.labels[0]).trim() : "";
+      if (l) text = text.replace(l, " ");
+    }
+    return text;
+  }
+
+  // Radios with no name or fieldset: the nearest ancestor holding other radios is their group.
+  function radioBox(el) {
+    let n = el;
+    while ((n = n.parentElement)) if ([...n.querySelectorAll("input[type=radio]")].some((r) => r !== el)) return n;
+    return null;
+  }
+
+  function questionFor(el, group = [el]) {
     if (el.type === "radio") {
-      const group = el.closest("fieldset, [role=radiogroup]");
-      if (group) {
-        const legend = group.querySelector("legend");
+      const box = el.closest("fieldset, [role=radiogroup]");
+      if (box) {
+        const legend = box.querySelector("legend");
         if (legend) return norm(textOf(legend));
-        if (group.getAttribute("aria-labelledby")) return norm(byIds(group, group.getAttribute("aria-labelledby")));
-        if (group.getAttribute("aria-label")) return norm(group.getAttribute("aria-label"));
+        if (box.getAttribute("aria-labelledby")) return norm(byIds(box, box.getAttribute("aria-labelledby")));
+        if (box.getAttribute("aria-label")) return norm(box.getAttribute("aria-label"));
       }
+      // The radio's own label is just its option ("Yes"); the question is around the group.
+      return norm(surroundingText(group));
     }
     const q =
       labelOf(el) ||
       el.getAttribute("placeholder") ||
       textOf(el.closest("[data-test-form-element], .fb-dash-form-element, .jobs-easy-apply-form-element")) ||
       el.name ||
-      el.id;
+      el.id ||
+      surroundingText([el]);
     return norm(q);
   }
 
@@ -282,12 +311,13 @@
 
   for (const el of fields) {
     if (el.type === "radio") {
-      const groupKey = el.name || el.closest("fieldset, [role=radiogroup]");
+      const keyOf = (r) => r.name || r.closest("fieldset, [role=radiogroup]") || radioBox(r);
+      const groupKey = keyOf(el);
       if (doneGroups.has(groupKey)) continue;
       doneGroups.add(groupKey);
-      const group = fields.filter((r) => r.type === "radio" && (el.name ? r.name === el.name : r.closest("fieldset, [role=radiogroup]") === groupKey));
+      const group = fields.filter((r) => r.type === "radio" && keyOf(r) === groupKey);
       if (group.some((r) => r.checked)) continue;
-      const q = questionFor(el);
+      const q = questionFor(el, group);
       const opts = group.map((r) => ({ el: r, text: norm(labelOf(r) || r.value) }));
       const opt = pick(opts, groupAnswer(q, opts));
       if (opt) {
