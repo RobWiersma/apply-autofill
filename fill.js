@@ -111,11 +111,21 @@
     [/cover letter|summary|why (are you|do you)/, () => d.coverLetter],
   ];
 
+  // Signature date on self-identification forms (e.g. the disability form's "Date").
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const today = { month: pad(now.getMonth() + 1), day: pad(now.getDate()), year: String(now.getFullYear()) };
+  BUILTIN.push([/^date\b(?! of birth)|today'?s date|signature date|date signed/, () => `${today.month}/${today.day}/${today.year}`]);
+
   function answerFor(q) {
     for (const r of customRules) if (r.test(q)) return r.answer;
     for (const [rx, fn] of BUILTIN) if (rx.test(q)) return (fn(q) || "").toString().trim();
     return "";
   }
+
+  // Self-ID forms often ask "Please check one of the boxes below" and only the choices say
+  // what it's about ("Yes, I have a disability…"), so fall back to reading the choices.
+  const groupAnswer = (q, opts) => answerFor(q) || answerFor(opts.map((o) => o.text).join(" | "));
 
   // ---------- reading the form ----------
   function byIds(el, ids) {
@@ -278,7 +288,8 @@
       const group = fields.filter((r) => r.type === "radio" && (el.name ? r.name === el.name : r.closest("fieldset, [role=radiogroup]") === groupKey));
       if (group.some((r) => r.checked)) continue;
       const q = questionFor(el);
-      const opt = pick(group.map((r) => ({ el: r, text: norm(labelOf(r) || r.value) })), answerFor(q));
+      const opts = group.map((r) => ({ el: r, text: norm(labelOf(r) || r.value) }));
+      const opt = pick(opts, groupAnswer(q, opts));
       if (opt) {
         opt.el.click();
         mark(el, true);
@@ -302,7 +313,8 @@
         doneGroups.add(box);
         if (group.some((c) => c.checked)) continue;
         const gq = norm(groupQuestion(box, group));
-        const opt = pick(group.map((c) => ({ el: c, text: norm(labelOf(c) || c.value) })), answerFor(gq));
+        const opts = group.map((c) => ({ el: c, text: norm(labelOf(c) || c.value) }));
+        const opt = pick(opts, groupAnswer(gq, opts));
         if (opt) {
           opt.el.click();
           mark(el, true);
@@ -342,7 +354,12 @@
     if (el.value && el.value.trim()) continue;
     // react-select shows its chosen value in a separate element, leaving the input empty.
     if (el.closest("[class*=control]")?.querySelector("[class*=single-value], [class*=multi-value]")) continue;
-    const a = answerFor(q);
+    // Workday splits a date into Month / Day / Year boxes; fill today's date only when the
+    // field is a plain "Date" (the self-ID signature date), never a birth date.
+    const part = q.match(/^(month|day|year)$/);
+    const box = part && el.closest(GROUP);
+    const isSignatureDate = box && /\bdate\b/.test(norm(groupQuestion(box, [el]))) && !/birth/.test(norm(textOf(box)));
+    const a = part ? (isSignatureDate ? today[part[1]] : "") : answerFor(q);
     if (!a) {
       mark(el, false);
       needs.add(q);
