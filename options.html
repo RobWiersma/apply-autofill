@@ -54,7 +54,11 @@
     <fieldset>
       <legend>Work history <span class="hint">most recent first. Used when a site asks for each job and didn't read your resume. Dates as YYYY-MM.</span></legend>
       <div id="jobs"></div>
-      <button type="button" id="addJob">+ Add job</button>
+      <div class="row">
+        <button type="button" id="addJob">+ Add job</button>
+        <label class="button">Load from resume (PDF or .txt)<input type="file" id="resume" accept=".pdf,.txt,application/pdf,text/plain" hidden></label>
+        <span id="resumeStatus" role="status" class="hint"></span>
+      </div>
       <template id="jobTemplate">
         <div class="job">
           <div class="grid">

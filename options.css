@@ -59,6 +59,8 @@ button, .button {
 }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 #status { color: var(--muted); font-size: 13px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row label.button { display: inline-block; color: var(--text); font-size: 14px; }
 .job { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 0 0 12px; }
 .job .removeJob { margin-top: 10px; }
 label.check { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 8px; }

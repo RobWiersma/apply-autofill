@@ -33,6 +33,36 @@ function readJobs() {
 
 document.getElementById("addJob").onclick = () => addJob();
 
+// Read jobs (and any missing contact info) from a resume. Shown for review; nothing is
+// saved until you click Save.
+document.getElementById("resume").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const note = document.getElementById("resumeStatus");
+  note.textContent = "Reading…";
+  try {
+    const { textFromFile, parseResume } = await import("./resume.js");
+    const { contact, jobs } = parseResume(await textFromFile(file));
+    if (!jobs.length) {
+      note.textContent = "Couldn't find any jobs with dates in that file. Add them by hand instead.";
+      return;
+    }
+    const have = readJobs().length;
+    if (have && !confirm(`Replace your ${have} saved job${have === 1 ? "" : "s"} with the ${jobs.length} found in your resume?`)) {
+      note.textContent = "";
+      return;
+    }
+    jobsBox.replaceChildren();
+    jobs.forEach((j) => addJob(j));
+    for (const [k, v] of Object.entries(contact)) if (v && form.elements[k] && !form.elements[k].value) form.elements[k].value = v;
+    note.textContent = `Found ${jobs.length} job${jobs.length === 1 ? "" : "s"}. Check them, then click Save.`;
+  } catch (err) {
+    console.error(err);
+    note.textContent = "Couldn't read that file.";
+  }
+});
+
 // ---------- load / save ----------
 function fill(data) {
   for (const el of form.elements) if (el.name) el.value = data[el.name] ?? "";
