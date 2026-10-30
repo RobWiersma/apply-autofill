@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "Apply Autofill",
+  "version": "1.1.1",
+  "description": "Fills job application forms (LinkedIn Easy Apply and others) from info you save once. Never submits anything.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.greenhouse.io/*",
+    "*://*.lever.co/*",
+    "*://*.ashbyhq.com/*",
+    "*://*.myworkdayjobs.com/*",
+    "*://*.myworkdaysite.com/*",
+    "*://*.smartrecruiters.com/*",
+    "*://*.icims.com/*",
+    "*://*.jobvite.com/*",
+    "*://*.bamboohr.com/*",
+    "*://*.workable.com/*",
+    "*://*.adp.com/*",
+    "*://*.ultipro.com/*",
+    "*://*.paylocity.com/*",
+    "*://*.applytojob.com/*",
+    "*://*.breezy.hr/*",
+    "*://*.recruitee.com/*",
+    "*://*.dayforcehcm.com/*",
+    "*://*.taleo.net/*",
+    "*://*.isolvedhire.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "Autofill this application (Alt+Shift+F)",
+    "default_icon": "icon.svg"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "Autofill the current application step"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "apply-autofill@local",
+      "strict_min_version": "140.0",
+      "update_url": "https://raw.githubusercontent.com/RobWiersma/apply-autofill/main/updates.json",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}
