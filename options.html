@@ -52,6 +52,26 @@
     </fieldset>
 
     <fieldset>
+      <legend>Work history <span class="hint">most recent first. Used when a site asks for each job and didn't read your resume. Dates as YYYY-MM.</span></legend>
+      <div id="jobs"></div>
+      <button type="button" id="addJob">+ Add job</button>
+      <template id="jobTemplate">
+        <div class="job">
+          <div class="grid">
+            <label>Job title<input data-job="title"></label>
+            <label>Company<input data-job="company"></label>
+            <label>Location<input data-job="location" placeholder="Seattle, WA"></label>
+            <label>Start<input data-job="start" placeholder="2021-03" pattern="\d{4}-\d{2}"></label>
+            <label>End<input data-job="end" placeholder="2024-06" pattern="\d{4}-\d{2}"></label>
+            <label class="check"><input type="checkbox" data-job="current"> I currently work here</label>
+          </div>
+          <label class="wide">Description<textarea data-job="description" rows="3"></textarea></label>
+          <button type="button" class="removeJob">Remove</button>
+        </div>
+      </template>
+    </fieldset>
+
+    <fieldset>
       <legend>Common yes/no questions</legend>
       <div class="grid">
         <label>Legally authorized to work here?<select name="workAuthorized"></select></label>

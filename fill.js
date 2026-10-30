@@ -308,8 +308,110 @@
   let filled = 0;
   const needs = new Set();
   const doneGroups = new Set();
+  const handled = new Set(); // fields filled by the work-history pass
+
+  // ---------- work history: one saved job per repeated "work experience" section ----------
+  const jobs = (d.jobs || []).filter((j) => j.title || j.company);
+  if (jobs.length) {
+    const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+    // Question text plus the group's label and Workday's field id ("startDate" -> "start date").
+    const ctxOf = (el) => {
+      const box = el.closest(GROUP);
+      const auto = (box && box.getAttribute("data-automation-id")) || "";
+      return norm([questionFor(el), box ? groupQuestion(box, [el]) : "", auto.replace(/([a-z])([A-Z])/g, "$1 $2")].join(" "));
+    };
+    const isTitle = (c) => /\b(job|position|role) ?title\b|^title\b/.test(c);
+    const isCompany = (c) => /\bcompany\b|employer|organi[sz]ation/.test(c);
+    const isDateish = (c) => /date|\bfrom\b|\bstart\b|month|year|description|responsibilit|currently/.test(c);
+
+    // A section is the smallest ancestor of a job-title field that also holds a company field,
+    // and has dates or a description (so a lone "Current title / Current company" pair isn't one).
+    const sections = [];
+    for (const t of fields.filter((f) => isTitle(ctxOf(f)))) {
+      let n = t;
+      for (let i = 0; i < 8 && (n = n.parentElement); i++) {
+        const inside = fields.filter((f) => n.contains(f));
+        if (!inside.some((f) => f !== t && isCompany(ctxOf(f)))) continue;
+        if (inside.some((f) => isDateish(ctxOf(f))) && !sections.some((s) => s.box === n)) sections.push({ box: n, inside });
+        break;
+      }
+    }
+
+    const ym = (s) => {
+      const m = (s || "").match(/(\d{4})-(\d{1,2})/);
+      return m ? { year: m[1], month: pad(+m[2]) } : null;
+    };
+
+    // Value for one date control: split Month/Year boxes, <input type=month/date>, selects, or text.
+    function dateValue(f, date) {
+      const q = questionFor(f);
+      if (f instanceof HTMLSelectElement) {
+        const opts = [...f.options].map((o) => ({ el: o, text: norm(o.text) }));
+        if (opts.some((o) => /^\d{4}$/.test(o.text))) return pick(opts, date.year);
+        return pick(opts, MONTHS[+date.month - 1]) || pick(opts, date.month) || pick(opts, String(+date.month));
+      }
+      if (/^month\b/.test(q)) return date.month;
+      if (/^year\b/.test(q)) return date.year;
+      if (f.type === "month") return `${date.year}-${date.month}`;
+      if (f.type === "date") return `${date.year}-${date.month}-01`;
+      return `${date.month}/${date.year}`;
+    }
+
+    async function fillJob(inside, job) {
+      const start = ym(job.start);
+      const end = job.current ? null : ym(job.end);
+      // The "I currently work here" box first: ticking it often hides the end date.
+      for (const f of inside.filter((f) => f.type === "checkbox")) {
+        if (/currently|current (job|role|position|employer)|present/.test(ctxOf(f)) && !!job.current !== f.checked) {
+          f.click();
+          mark(f, true);
+          filled++;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 150));
+      for (const f of inside) {
+        if (f.type === "checkbox" || !f.isConnected) continue;
+        if (!(f instanceof HTMLSelectElement) && f.value && f.value.trim()) continue;
+        const c = ctxOf(f);
+        let v = "";
+        if (/date|\bfrom\b|\bto\b|\bstart\b|\bend\b|until|^month|^year/.test(c) && !/title|company|employer|description/.test(c)) {
+          const date = /\bto\b|\bend\b|until/.test(c) && !/\bfrom\b|\bstart\b/.test(c) ? end : start;
+          if (date) v = dateValue(f, date);
+        } else if (isTitle(c) || /position/.test(c)) v = job.title;
+        else if (isCompany(c)) v = job.company;
+        else if (/location|city/.test(c)) v = job.location;
+        else if (/description|responsibilit|duties|summary|accomplishment|achievement/.test(c)) v = job.description;
+        if (!v) continue;
+        if (f instanceof HTMLSelectElement) {
+          if (typeof v !== "object") v = pick([...f.options].map((o) => ({ el: o, text: norm(o.text) })), v);
+          if (!v) continue;
+          setValue(f, v.el.value);
+        } else {
+          setValue(f, v);
+        }
+        mark(f, true);
+        filled++;
+      }
+    }
+
+    if (sections.length) {
+      // Skip jobs already entered (e.g. by the site's resume parser or an earlier run).
+      const companyOf = (s) => s.inside.find((f) => isCompany(ctxOf(f)));
+      const used = new Set(sections.map((s) => norm(companyOf(s)?.value)).filter(Boolean));
+      const next = jobs.filter((j) => !used.has(norm(j.company)));
+      for (const s of sections) {
+        s.inside.forEach((f) => handled.add(f));
+        if (companyOf(s)?.value.trim() || !next.length) continue;
+        await fillJob(s.inside, next.shift());
+      }
+      if (next.length) {
+        needs.add(`${next.length} more saved job${next.length === 1 ? "" : "s"}: click the site's "Add" button for work experience, then run autofill again`);
+      }
+    }
+  }
 
   for (const el of fields) {
+    if (handled.has(el)) continue;
     if (el.type === "radio") {
       const keyOf = (r) => r.name || r.closest("fieldset, [role=radiogroup]") || radioBox(r);
       const groupKey = keyOf(el);
